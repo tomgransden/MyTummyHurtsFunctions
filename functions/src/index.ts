@@ -1,9 +1,16 @@
 import {https} from "firebase-functions/v1";
 import * as admin from "firebase-admin";
-import * as logger from "firebase-functions/logger";
 import {format} from "date-fns";
 
 admin.initializeApp();
+
+export const generateGraphDataForPeriod = https.onRequest((req, res) => {
+  if (req.headers.authorization) {
+    res.status(200).send({data: {}});
+  } else {
+    res.status(403).send("No bearer token on request");
+  }
+});
 
 export const aggregateResults = https.onRequest(async (req, res) => {
   if (req.headers.authorization) {
@@ -35,13 +42,12 @@ export const aggregateResults = https.onRequest(async (req, res) => {
     const dataToReturn = Object.entries(formattedData)
       .map(([date, entries]) => ({
         displayDate: format(date, "EEEE do MMMM y"),
+        date,
         sortedEntries: entries
           .sort((a: {createdDate: string}, b: {createdDate: string}) =>
             b.createdDate.localeCompare(a.createdDate)),
-      }));
-
-    logger.info("Reduced thing: " + JSON.stringify(dataToReturn));
-
+      })).sort((a, b) => new Date(b.date).getTime() -
+      new Date(a.date).getTime());
 
     res.status(200).send({data: JSON.stringify(dataToReturn)});
   } else {
