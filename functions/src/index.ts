@@ -1,8 +1,22 @@
 import {https} from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import {format} from "date-fns";
+import {getAuth} from "firebase-admin/auth";
 
 admin.initializeApp();
+
+export const removeAllAccounts = https.onRequest(async (req, res) => {
+  const deletePromises: Array<Promise<void>> = [];
+  await getAuth().listUsers().then((result) => {
+    result.users.map((user) =>{
+      deletePromises.push(getAuth().deleteUser(user.uid));
+    });
+  });
+
+  await Promise.all(deletePromises);
+
+  res.status(200);
+});
 
 export const generateGraphDataForPeriod = https.onRequest((req, res) => {
   if (req.headers.authorization) {
