@@ -1,21 +1,74 @@
 import {https} from "firebase-functions/v1";
 import * as admin from "firebase-admin";
-import {format} from "date-fns";
+import {eachDayOfInterval, format, isSameDay, subDays} from "date-fns";
 import {getAuth} from "firebase-admin/auth";
 
 admin.initializeApp();
 
 export const removeAllAccounts = https.onRequest(async (req, res) => {
-  const deletePromises: Array<Promise<void>> = [];
-  await getAuth().listUsers().then((result) => {
-    result.users.map((user) =>{
-      deletePromises.push(getAuth().deleteUser(user.uid));
-    });
-  });
+  try {
+    const {users} = await getAuth().listUsers();
 
-  await Promise.all(deletePromises);
+    await Promise.all(users.map(async (user) =>
+      getAuth().deleteUser(user.uid)));
 
-  res.status(200);
+    await Promise.all(users.map(async (user) =>
+      admin.firestore().collection("users").doc(user.uid).delete()));
+
+    res.status(204).send();
+  } catch (e) {
+    res.status(400).send({error: "Unable to delete users"});
+  }
+});
+
+export const generateVictoryDataForPeriod =
+https.onRequest(async (req, res) => {
+  if (req.headers.authorization) {
+    const lastSevenDays = eachDayOfInterval({
+      start: new Date(),
+      end: subDays(Date.now(), 6),
+    }).map((date) => format(date, "yyyy-MM-dd")).reverse();
+
+    const splitToken = req.headers.authorization.split(" ")[1];
+    const decodedToken = await admin.auth().verifyIdToken(splitToken);
+
+    const userDb = admin.firestore().collection("users").doc(decodedToken.uid);
+
+    const result = await userDb.get();
+
+    const allPains = [...(result.get("pains") ?? [])];
+
+    const allBowels = [...(result.get("bowel") ?? [])];
+
+    const getPainsForDay = (date: string) => {
+      const matchingPains = allPains.filter(({createdDate}) =>
+        isSameDay(createdDate, date)).map(({metadata}) => metadata.painScore);
+
+      if (matchingPains.length === 0) return null;
+
+      return matchingPains.reduce( ( p, c ) =>
+        p + c, 0 ) / matchingPains.length;
+    };
+
+    const getBowelsForDay = (date: string) => {
+      const matchingBowels = allBowels.filter(({createdDate}) =>
+        isSameDay(createdDate, date));
+
+      if (matchingBowels.length === 0) return null;
+
+      return matchingBowels.length;
+    };
+
+    const data = lastSevenDays.map((date) => ({
+      date: format(date, "E"),
+      pain: getPainsForDay(format(date, "yyyy-MM-dd")),
+      bowel: getBowelsForDay(format(date, "yyyy-MM-dd")),
+    }));
+
+    res.status(200).send({data: JSON.stringify(data)});
+  } else {
+    res.status(403).send("No bearer token attached to request");
+  }
 });
 
 export const generateGraphDataForPeriod = https.onRequest((req, res) => {
@@ -35,13 +88,21 @@ export const aggregateResults = https.onRequest(async (req, res) => {
 
     const result = await userDb.get();
 
+    const lastSevenDays = eachDayOfInterval({
+      start: new Date(),
+      end: subDays(Date.now(), 6),
+    }).map((date) => format(date, "yyyy-MM-dd"));
+
     const formattedData: { [k in string]: [] } = [
       ...(result.get("medications") ?? []),
       ...(result.get("foods") ?? []),
       ...(result.get("moods") ?? []),
       ...(result.get("pains") ?? []),
+      ...(result.get("bowel") ?? []),
     ].reduce((acc, cur: { createdDate: string }) => {
       const formattedDate = format(cur.createdDate, "yyyy-MM-dd");
+
+      if (!lastSevenDays.includes(formattedDate)) return acc;
 
       if (acc[formattedDate]) {
         acc[formattedDate] = [...acc[formattedDate], cur];
