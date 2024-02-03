@@ -2,8 +2,71 @@ import {https} from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import {eachDayOfInterval, format, isSameDay, subDays} from "date-fns";
 import {getAuth} from "firebase-admin/auth";
+import {v4 as uuidv4} from "uuid";
 
 admin.initializeApp();
+
+export const retrofitUniqueIds = https.onRequest(async (req, res) => {
+  const {users} = await getAuth().listUsers();
+
+  users.forEach(async (user) => {
+    const document =
+    await admin.firestore().collection("users").doc(user.uid).get();
+
+    const pains: Array<any> | undefined = document.get("pains");
+    const bowel: Array<any> | undefined = document.get("bowel");
+    const moods: Array<any> | undefined = document.get("moods");
+    const foods: Array<any> | undefined = document.get("foods");
+
+    const updatedPains = pains?.map((pain) => ({
+      id: pain?.id ?? uuidv4(),
+      ...pain,
+    }));
+
+    const updatedBowel = bowel?.map((bowel) => ({
+      id: bowel?.id ?? uuidv4(),
+      ...bowel,
+    }));
+
+    const updatedFoods = foods?.map((food) => ({
+      id: food?.id ?? uuidv4(),
+      ...food,
+    }));
+
+    const updatedMoods = moods?.map((mood) => ({
+      id: mood?.id ?? uuidv4(),
+      ...mood,
+    }));
+
+
+    if (updatedBowel) {
+      await admin.firestore().collection("users").doc(user.uid).set({
+        bowel: updatedBowel,
+      }, {merge: true});
+    }
+
+    if (updatedPains) {
+      await admin.firestore().collection("users").doc(user.uid).set({
+        pains: updatedPains,
+      }, {merge: true});
+    }
+
+    if (updatedFoods) {
+      await admin.firestore().collection("foods").doc(user.uid).set({
+        foods: updatedFoods,
+      }, {merge: true});
+    }
+
+    if (updatedMoods) {
+      await admin.firestore().collection("moods").doc(user.uid).set({
+        moods: updatedMoods,
+      }, {merge: true});
+    }
+
+
+    res.status(200).send("Added all missing IDs for all users");
+  });
+});
 
 export const removeAllAccounts = https.onRequest(async (req, res) => {
   try {
