@@ -52,13 +52,13 @@ export const retrofitUniqueIds = https.onRequest(async (req, res) => {
     }
 
     if (updatedFoods) {
-      await admin.firestore().collection("foods").doc(user.uid).set({
+      await admin.firestore().collection("users").doc(user.uid).set({
         foods: updatedFoods,
       }, {merge: true});
     }
 
     if (updatedMoods) {
-      await admin.firestore().collection("moods").doc(user.uid).set({
+      await admin.firestore().collection("users").doc(user.uid).set({
         moods: updatedMoods,
       }, {merge: true});
     }
